@@ -6,7 +6,7 @@ minutes a week.
 
 **Stack:** Next.js 15 · Supabase (Postgres + magic-link auth) · Vercel.
 **Cost:** $0/month at five players. Props being manual is what keeps it there —
-player-prop feeds start around $99/month, game spreads are free.
+player-prop feeds start around $99/month, game spreads are free. 
 
 ---
 
