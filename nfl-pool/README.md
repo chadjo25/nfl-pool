@@ -64,7 +64,7 @@ If this returns games, you're live. If it 502s, see *Odds provider* below.
 
 Push to GitHub, import to Vercel, paste the same env vars in. `vercel.json`
 registers both crons automatically. Set the Supabase **Site URL** to your
-production domain or magic links will redirect to localhost.
+production domain or magic links will redirect to localhost. 
 
 ---
 
