@@ -2,9 +2,62 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { currentSeason } from "@/lib/providers/odds-provider";
-import GradeClient, { type Row, type WeekTab } from "./GradeClient";
+import GradeClient, { type Row, type WeekTab, type Submission } from "./GradeClient";
 
 export const dynamic = "force-dynamic";
+
+/** Earliest week that still has an unplayed game — the one people are picking. */
+async function livingWeek(season: number) {
+  const db = await createClient();
+  const { data } = await db
+    .from("games").select("week")
+    .eq("season", season).neq("status", "final")
+    .order("kickoff").limit(1).maybeSingle();
+  return data?.week ?? 1;
+}
+
+/**
+ * Who has submitted what for the week in progress.
+ *
+ * Counts only — never sides. Picks stay hidden until kickoff so nobody can be
+ * suspected of peeking, and the commissioner plays too. Knowing that someone
+ * has 11 of 16 spreads in and no lock set is all the oversight the job needs.
+ */
+async function getSubmissions(season: number, week: number): Promise<Submission[]> {
+  const db = await createClient();
+
+  const [profiles, games, spreads, props, tiebreaks] = await Promise.all([
+    db.from("profiles").select("id, display_name"),
+    db.from("games").select("id", { count: "exact", head: true })
+      .eq("season", season).eq("week", week),
+    db.from("spread_picks").select("profile_id, is_lock")
+      .eq("season", season).eq("week", week),
+    db.from("prop_picks").select("profile_id, kind")
+      .eq("season", season).eq("week", week),
+    db.from("tiebreak_guesses").select("profile_id")
+      .eq("season", season).eq("week", week),
+  ]);
+
+  const totalGames = games.count ?? 0;
+  const guessed = new Set((tiebreaks.data ?? []).map((t) => t.profile_id));
+
+  return (profiles.data ?? [])
+    .map((p) => {
+      const mine = (spreads.data ?? []).filter((s) => s.profile_id === p.id);
+      const myProps = (props.data ?? []).filter((x) => x.profile_id === p.id);
+      return {
+        profileId: p.id,
+        displayName: p.display_name,
+        spreads: mine.length,
+        totalGames,
+        lockSet: mine.some((s) => s.is_lock),
+        td: myProps.some((x) => x.kind === "td"),
+        prop: myProps.some((x) => x.kind === "prop"),
+        tiebreak: guessed.has(p.id),
+      };
+    })
+    .sort((a, b) => a.spreads - b.spreads || a.displayName.localeCompare(b.displayName));
+}
 
 export default async function Admin({
   searchParams,
@@ -34,11 +87,14 @@ export default async function Admin({
 
   // Default to the oldest week with outstanding picks — that's the work you
   // actually owe. Falls back to the newest week when everything is graded.
-  const requested = Number(( await searchParams).week);
+  const requested = Number((await searchParams).week);
   const week =
     Number.isFinite(requested) && tally.has(requested)
       ? requested
       : weeks.find((w) => w.ungraded > 0)?.week ?? weeks.at(-1)?.week ?? 1;
+
+  const openWeek = await livingWeek(season);
+  const submissions = await getSubmissions(season, openWeek);
 
   // Names are fetched separately rather than as an embedded join: prop_picks
   // has two foreign keys into profiles (profile_id and graded_by), so asking
@@ -80,5 +136,10 @@ export default async function Admin({
     game: r.game_id ? matchups.get(r.game_id) ?? null : null,
   }));
 
-  return <GradeClient rows={rows} week={week} season={season} weeks={weeks} />;
+  return (
+    <GradeClient
+      rows={rows} week={week} season={season} weeks={weeks}
+      submissions={submissions} openWeek={openWeek}
+    />
+  );
 }
