@@ -9,6 +9,17 @@ import { scorePick } from "@/lib/scoring";
 
 export type WeekTab = { week: number; total: number; ungraded: number };
 
+export type Submission = {
+  profileId: string;
+  displayName: string;
+  spreads: number;
+  totalGames: number;
+  lockSet: boolean;
+  td: boolean;
+  prop: boolean;
+  tiebreak: boolean;
+};
+
 export type Row = {
   id: string;
   displayName: string;
@@ -28,8 +39,11 @@ export type Row = {
  * Ten picks, three buttons each. Everything downstream — de-vigging, expected
  * wins, WAE, units, points — is derived from the price and this one click.
  */
-export default function GradeClient({ rows, week, season, weeks }: {
+export default function GradeClient({
+  rows, week, season, weeks, submissions, openWeek,
+}: {
   rows: Row[]; week: number; season: number; weeks: WeekTab[];
+  submissions: Submission[]; openWeek: number;
 }) {
   const [state, setState] = useState(rows);
   const [error, setError] = useState("");
@@ -79,6 +93,44 @@ export default function GradeClient({ rows, week, season, weeks }: {
         </nav>
       )}
 
+      <h2 className="sec">
+        Submissions <em className="opt">Week {openWeek} &middot; in progress</em>
+      </h2>
+      <div className="scroller">
+        <table>
+          <thead><tr>
+            <th>Player</th><th>Spreads</th><th>Lock</th><th>TD</th><th>Prop</th><th>Tiebreak</th>
+          </tr></thead>
+          <tbody>
+            {submissions.map((s) => {
+              const short = s.spreads < s.totalGames;
+              return (
+                <tr key={s.profileId} className={short || !s.lockSet ? "hook" : ""}>
+                  <td className="name">{s.displayName}</td>
+                  <td className={short ? "debit" : "credit"}>
+                    {s.spreads}/{s.totalGames}
+                  </td>
+                  <Yes on={s.lockSet} />
+                  <Yes on={s.td} muted />
+                  <Yes on={s.prop} muted />
+                  <Yes on={s.tiebreak} />
+                </tr>
+              );
+            })}
+            {submissions.length === 0 && (
+              <tr><td colSpan={6} className="faint">Nobody has signed up yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="note">
+        Counts only, never sides — picks stay hidden until kickoff for everyone including you.
+        Rows are flagged when someone is short on spreads or hasn&apos;t set a lock, which is what
+        usually goes wrong. TD and prop are optional, so they&apos;re greyed rather than flagged.
+        No tiebreaker means losing any tie automatically.
+      </p>
+
+      <h2 className="sec">Grade props <em className="opt">Week {week}</em></h2>
       <div className="gradelist">
         {state.map((row) => (
           <GradeRow key={row.id} row={row} onGrade={grade} onError={setError} />
@@ -98,6 +150,14 @@ export default function GradeClient({ rows, week, season, weeks }: {
         the deadline.
       </p>
     </>
+  );
+}
+
+function Yes({ on, muted }: { on: boolean; muted?: boolean }) {
+  return (
+    <td className={on ? (muted ? "faint" : "credit") : muted ? "faint" : "debit"}>
+      {on ? "yes" : "—"}
+    </td>
   );
 }
 
