@@ -84,7 +84,7 @@ export default function How() {
         exactly the same distance away, the week goes unpaid and you sort it out yourselves.
       </p>
 
-      <h3 className="sub">CLV, the odd-looking column</h3>
+     {/* <h3 className="sub">CLV, the odd-looking column</h3>
       <p className="prose">
         Lines move all week. Bears might open −3.5 on Wednesday and close −4.5 by
         kickoff as money and injury news come in. <b>The closing line is the market&apos;s
@@ -102,7 +102,7 @@ export default function How() {
         registers on <em>every</em> pick whether it won or lost, so it separates good
         pickers from lucky ones much faster. It only works if you pick early, though —
         submit at 12:55 on Sunday and the line has already closed, so you&apos;ll read zero.
-      </p>
+      </p>  */}
 
       <h2 className="sec">Touchdown scorers and props</h2>
       <p className="prose">
