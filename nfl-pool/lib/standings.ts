@@ -285,6 +285,34 @@ export async function getWeeklySpreadResults(season: number): Promise<WeekRow[]>
 }
 
 /**
+ * Season spread record, summed from the weekly rows.
+ *
+ * Derived rather than recalculated on purpose. The lock doubling and the
+ * default-to-last-game rule are fiddly enough that having two implementations
+ * guarantees they disagree — which they did: the week grid showed a lost lock
+ * as 0-2 while the season table showed the same pick as 0-1.
+ */
+export function seasonSpreadTotals(weeks: WeekRow[]) {
+  const totals = new Map<string, { wins: number; losses: number; pushes: number; pct: number }>();
+
+  for (const w of weeks) {
+    for (const [profileId, rec] of w.records) {
+      const t = totals.get(profileId) ?? { wins: 0, losses: 0, pushes: 0, pct: 0 };
+      t.wins += rec.wins;
+      t.losses += rec.losses;
+      t.pushes += rec.pushes;
+      totals.set(profileId, t);
+    }
+  }
+
+  for (const t of totals.values()) {
+    const decided = t.wins + t.losses + t.pushes;
+    t.pct = decided > 0 ? (t.wins + t.pushes / 2) / decided : 0;
+  }
+  return totals;
+}
+
+/**
  * Weeks won per player.
  *
  * An unresolved week pays nobody. That should be vanishingly rare — it needs
