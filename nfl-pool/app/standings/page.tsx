@@ -1,5 +1,5 @@
 /* app/standings/page.tsx */
-import { getStandings, getWeeklySpreadResults, weeksWon } from "@/lib/standings";
+import { getStandings, getWeeklySpreadResults, weeksWon, seasonSpreadTotals } from "@/lib/standings";
 import { currentSeason } from "@/lib/providers/odds-provider";
 import {
   type PropMetrics, buyIn, weeklyPrize, seasonPot, seasonSplit,
@@ -23,6 +23,11 @@ export default async function Standings() {
     getWeeklySpreadResults(season),
   ]);
   const won = weeksWon(weeks);
+  const totals = seasonSpreadTotals(weeks);
+  const graded = [...totals.values()].reduce((n, t) => n + t.wins + t.losses + t.pushes, 0);
+  // Win% off a handful of picks is noise dressed as precision. Grey it out
+  // until there's enough of a sample to mean anything.
+  const pctMeaningful = graded >= 20;
   const players = [...standings].sort((a, b) => a.displayName.localeCompare(b.displayName));
   const played = weeks.filter((w) => w.records.size > 0);
   const headcount = standings.length;
@@ -127,21 +132,31 @@ export default async function Standings() {
           <th>Player</th><th>Record</th><th>Win%</th><th>Weeks won</th>
         </tr></thead>
         <tbody>
-          {[...standings].sort((a, b) => b.spreads.winPct - a.spreads.winPct).map((p, i) => (
+          {[...standings]
+            .sort((a, b) =>
+              (totals.get(b.profileId)?.pct ?? 0) - (totals.get(a.profileId)?.pct ?? 0) ||
+              (won.get(b.profileId) ?? 0) - (won.get(a.profileId) ?? 0)
+            )
+            .map((p, i) => {
+              const t = totals.get(p.profileId) ?? { wins: 0, losses: 0, pushes: 0, pct: 0 };
+              return (
             <tr key={p.profileId} className={i < split.length ? "inmoney" : ""}>
               <td className="name">
                 {p.displayName}
                 {i < split.length && <em>{money(seasonPot(headcount) * split[i])}</em>}
               </td>
-              <td>{p.spreads.wins}-{p.spreads.losses}{p.spreads.pushes ? `-${p.spreads.pushes}` : ""}</td>
-              <td>{(p.spreads.winPct * 100).toFixed(1)}</td>
+              <td>{t.wins}-{t.losses}{t.pushes ? `-${t.pushes}` : ""}</td>
+              <td className={pctMeaningful ? "" : "faint"}>{(t.pct * 100).toFixed(1)}</td>
               <td className={won.get(p.profileId) ? "credit" : "faint"}>{won.get(p.profileId) ?? 0}</td>
             </tr>
-          ))}
+              );
+            })}
         </tbody>
       </table>
       <p className="note">
-        Season pot is {money(seasonPot(headcount))}, paid to the top{" "}
+        Records include the lock, so a lost lock shows as 0-2 here exactly as it does above.
+        {!pctMeaningful && " Win% is greyed until there are enough graded picks for it to mean anything."}
+        {" "}Season pot is {money(seasonPot(headcount))}, paid to the top{" "}
         {split.length === 1 ? "finisher" : `${split.length} on ${split.map((s) => `${Math.round(s * 100)}%`).join(" / ")}`}
         {" "}— the split widens automatically as more people join.
       </p>
