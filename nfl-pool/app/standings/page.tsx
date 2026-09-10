@@ -124,7 +124,7 @@ export default async function Standings() {
       <h2 className="sec">Season totals <em>against the spread</em></h2>
       <table>
         <thead><tr>
-          <th>Player</th><th>Record</th><th>Win%</th><th>Weeks won</th><th>CLV</th>
+          <th>Player</th><th>Record</th><th>Win%</th><th>Weeks won</th>
         </tr></thead>
         <tbody>
           {[...standings].sort((a, b) => b.spreads.winPct - a.spreads.winPct).map((p, i) => (
@@ -136,9 +136,6 @@ export default async function Standings() {
               <td>{p.spreads.wins}-{p.spreads.losses}{p.spreads.pushes ? `-${p.spreads.pushes}` : ""}</td>
               <td>{(p.spreads.winPct * 100).toFixed(1)}</td>
               <td className={won.get(p.profileId) ? "credit" : "faint"}>{won.get(p.profileId) ?? 0}</td>
-              <td className={cls(p.spreads.clv)}>
-                {p.spreads.clvSample ? `${sgn(p.spreads.clv * 100, 2)}pp` : "—"}
-              </td>
             </tr>
           ))}
         </tbody>
@@ -146,9 +143,7 @@ export default async function Standings() {
       <p className="note">
         Season pot is {money(seasonPot(headcount))}, paid to the top{" "}
         {split.length === 1 ? "finisher" : `${split.length} on ${split.map((s) => `${Math.round(s * 100)}%`).join(" / ")}`}
-        {" "}— the split widens automatically as more people join. CLV measures the number you
-        got against where the game closed; it registers on every pick whether it wins or not,
-        so it says something useful long before a win-loss record does.
+        {" "}— the split widens automatically as more people join.
       </p>
 
       <PropTable title="Touchdown scorers" rows={standings.map((p) => ({ ...p, m: p.td }))} />
