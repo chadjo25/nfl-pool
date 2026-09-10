@@ -1,0 +1,16 @@
+name: Scheduled jobs
+
+"on":
+  schedule:
+    - cron: "20 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ingest spread lines
+        run: 'curl -sS --fail-with-body -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/ingest"'
+
+      - name: Grade finished games
+        run: 'curl -sS --fail-with-body -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/grade"'
