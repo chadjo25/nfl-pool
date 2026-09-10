@@ -206,3 +206,9 @@ input.odds.wide{width:96px;text-align:left;font-size:16px}
 .mast nav a.me{color:var(--ink);font-weight:600;text-transform:none;letter-spacing:0;font-family:'Archivo',sans-serif;font-size:13px}
 .loginhint{font-size:12px;color:var(--ink3);line-height:1.55;margin-top:14px}
 .login input{margin-bottom:12px}
+
+/* worked-example lines in the how-it-works terms */
+dl.terms .calc{
+  font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink);
+  background:var(--band);padding:6px 9px;border-radius:var(--r);margin:7px 0
+}
