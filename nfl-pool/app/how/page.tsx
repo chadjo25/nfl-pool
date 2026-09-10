@@ -114,42 +114,55 @@ export default function How() {
         <span className="mono"> +300</span> means about 25%.
       </p>
 
+      <p className="prose">
+        Say you made three picks: <span className="mono">+150</span> (won),{" "}
+        <span className="mono">&minus;200</span> (lost), <span className="mono">+300</span> (won).
+        Every column below is worked out from exactly those three.
+      </p>
+
       <dl className="terms">
         <dt>Expected</dt>
         <dd>
-          Add up those probabilities. Ten picks at 70% and you should hit about seven.
-          Ten longshots at 25% and you should hit about two and a half.
+          Turn each price into a probability, then add them up. Sportsbooks pad their numbers,
+          so the site strips that out first &mdash; <span className="mono">+150</span> shows as
+          40% at the book but is really about <b>36%</b>, <span className="mono">&minus;200</span>{" "}
+          is 67% listed and about <b>62%</b> real, <span className="mono">+300</span> is 25%
+          listed and about <b>22%</b>.
+          <div className="calc">0.36 + 0.62 + 0.22 = <b>1.21 expected hits</b></div>
         </dd>
 
-        <dt>WAE — wins above expected</dt>
+        <dt>WAE &mdash; wins above expected</dt>
         <dd>
-          What you actually hit, minus what you should have. Go 8-2 on heavy favourites
-          and you&apos;re about +1, which is fine. Go 8-2 on +300 dogs, where you were
-          expected to hit two and a half, and you&apos;re <b>+5.5</b> — an outrageous season.
-          Same record. Completely different achievement.
+          What you actually hit, minus what you should have.
+          <div className="calc">2 hits &minus; 1.21 expected = <b>+0.79</b></div>
+          Nearly one win better than the market said those exact picks were worth. Had you gone
+          2-1 on three heavy favourites instead, expected would be about 2.1 and you&apos;d be
+          at <span className="mono">&minus;0.1</span> &mdash; same record, worse season.
         </dd>
 
         <dt>Signal</dt>
         <dd>
-          Answers &ldquo;is this just luck?&rdquo; Seven heads in ten coin flips means nothing;
-          seventy in a hundred means something. Signal converts your WAE into how
-          surprising it actually is. Below about 1.5 it stays greyed out, because at that
-          level it genuinely is noise.
+          How surprising that WAE really is. Three picks can&apos;t prove anything, and this
+          column says so out loud.
+          <div className="calc">+0.79 &divide; 0.80 spread of luck = <b>+1.0&sigma;</b></div>
+          Under about 1.5 it stays greyed out. You&apos;d need roughly the same edge over
+          thirty-odd picks before it starts meaning something.
         </dd>
 
         <dt>Units</dt>
         <dd>
-          If you&apos;d put $100 on each pick, are you up or down? Rewards the size of your
-          wins rather than how often you win.
+          Flat $100 on every pick. A winner pays what the price says; a loser costs one unit.
+          <div className="calc">+1.5 &nbsp;&minus;1.0 &nbsp;+3.0 = <b>+3.5 units</b>, or $350</div>
         </dd>
 
         <dt>Points</dt>
         <dd>
-          The scoreboard. A winner pays out at the price you took, so a{" "}
-          <span className="mono">+250</span> hit is worth roughly six times a{" "}
-          <span className="mono">−250</span> hit. A miss costs 100 regardless. Anything
-          longer than <span className="mono">+600</span> is credited at +600, so one lucky
-          lottery ticket in Week 3 can&apos;t decide the whole season.
+          The scoreboard, and the same idea as units on a bigger scale. A miss is always
+          &minus;100.
+          <div className="calc">+150 &rarr; 150 &nbsp;&middot;&nbsp; miss &rarr; &minus;100
+          &nbsp;&middot;&nbsp; +300 &rarr; 300 &nbsp;=&nbsp; <b>350</b></div>
+          Anything longer than <span className="mono">+600</span> is credited at +600, so one
+          lucky lottery ticket in Week 3 can&apos;t decide the season.
         </dd>
       </dl>
 
