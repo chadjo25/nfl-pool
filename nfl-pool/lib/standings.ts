@@ -163,7 +163,7 @@ export type WeekRow = {
 export async function getWeeklySpreadResults(season: number): Promise<WeekRow[]> {
   const db = await createClient();
 
-  const [games, picks, tiebreaks] = await Promise.all([
+  const [games, picks, tiebreaks, people] = await Promise.all([
     fetchAll<{ id: string; week: number; status: string; kickoff: string; home: string; away: string; home_score: number | null; away_score: number | null }>(
       (from, to) => db.from("games")
         .select("id, week, status, kickoff, home, away, home_score, away_score")
@@ -175,7 +175,14 @@ export async function getWeeklySpreadResults(season: number): Promise<WeekRow[]>
         .eq("season", season).range(from, to)
     ),
     db.from("tiebreak_guesses").select("profile_id, week, points").eq("season", season),
+    db.from("profiles").select("id, created_at"),
   ]);
+
+  // Final games per week, so a missing pick can be scored as a loss.
+  const finalGamesOf = new Map<number, { id: string; kickoff: string }[]>();
+  const joinedAt = new Map<string, string>(
+    (people.data ?? []).map((p) => [p.id as string, p.created_at as string])
+  );
 
   const weekOf = new Map<string, number>();
   const weeksSeen = new Map<number, { total: number; final: number }>();
@@ -187,6 +194,12 @@ export async function getWeeklySpreadResults(season: number): Promise<WeekRow[]>
     tally.total++;
     if (g.status === "final") tally.final++;
     weeksSeen.set(g.week, tally);
+
+    if (g.status === "final") {
+      const list = finalGamesOf.get(g.week) ?? [];
+      list.push({ id: g.id, kickoff: g.kickoff });
+      finalGamesOf.set(g.week, list);
+    }
 
     const current = lastGameOf.get(g.week);
     if (!current || g.kickoff > current.kickoff) {
@@ -228,10 +241,29 @@ export async function getWeeklySpreadResults(season: number): Promise<WeekRow[]>
     const guesses = guessesByWeek.get(week) ?? new Map<string, number>();
     const records = new Map<string, WeekRecord>();
 
-    for (const [profileId, list] of byWeekPlayer.get(week) ?? []) {
+    // Everyone who could have picked this week, not just everyone who did.
+    // Abstaining used to be free: an unpicked game simply wasn't counted, so
+    // sitting out a coin-flip game protected your win%. Missing picks now
+    // score as losses.
+    const finals = finalGamesOf.get(week) ?? [];
+    const pickedBy = byWeekPlayer.get(week) ?? new Map<string, Pick[]>();
+    const eligible = new Set<string>(pickedBy.keys());
+    if (finals.length > 0) {
+      for (const [profileId, joined] of joinedAt) {
+        // Don't charge someone for games that finished before they signed up.
+        if (finals.some((g) => joined < g.kickoff)) eligible.add(profileId);
+      }
+    }
+
+    for (const profileId of eligible) {
+      const list = pickedBy.get(profileId) ?? [];
+      const joined = joinedAt.get(profileId) ?? "";
       const chosen = list.find((p) => p.is_lock)?.game_id ?? null;
-      // Forgetting to set one defaults to the last game, so it's never free.
-      const lockGameId = chosen ?? (list.some((p) => p.game_id === last?.id) ? last!.id : null);
+      // No lock set defaults to the last game of the week — unconditionally,
+      // whether or not they picked it. Making the default depend on having
+      // picked it reopened the same hole from the other side: skipping the
+      // last game dodged the doubling, so abstaining beat picking and losing.
+      const lockGameId = chosen ?? last?.id ?? null;
 
       let wins = 0, losses = 0, pushes = 0;
       for (const p of list) {
@@ -240,6 +272,16 @@ export async function getWeeklySpreadResults(season: number): Promise<WeekRow[]>
         if (p.result === "win") wins += weight;
         else if (p.result === "loss") losses += weight;
       }
+
+      const made = new Set(list.map((p) => p.game_id));
+      for (const g of finals) {
+        if (made.has(g.id)) continue;
+        if (joined >= g.kickoff) continue;  // joined after this one started
+        // A missed pick on the lock game costs double, same as picking it
+        // and losing. Otherwise not picking would be the safer play.
+        losses += g.id === lockGameId ? 2 : 1;
+      }
+
       const decided = wins + losses + pushes;
       records.set(profileId, {
         wins, losses, pushes,
