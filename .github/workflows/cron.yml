@@ -2,7 +2,12 @@ name: Scheduled jobs
 
 "on":
   schedule:
+    # Lines and grading, hourly.
     - cron: "20 * * * *"
+    # Reminders. GitHub only speaks UTC and ignores daylight saving, so each
+    # slot fires at both candidate hours and the route ignores the wrong one.
+    - cron: "30 15,16 * * 4"   # Thu 9:30am Mountain
+    - cron: "30 14,15 * * 0"   # Sun 8:30am Mountain
   workflow_dispatch:
 
 jobs:
@@ -14,3 +19,6 @@ jobs:
 
       - name: Grade finished games
         run: 'curl -sS --fail-with-body -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/grade"'
+
+      - name: Send pick reminders
+        run: 'curl -sS --fail-with-body -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/remind"'
