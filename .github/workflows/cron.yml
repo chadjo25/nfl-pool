@@ -6,12 +6,13 @@ name: Scheduled jobs
     - cron: "20 * * * *"
     # Reminders. GitHub only speaks UTC and ignores daylight saving, so each
     # slot fires at both candidate hours and the route ignores the wrong one.
-    - cron: "30 15,16 * * 4"   # Thu 9:30am Mountain
-    - cron: "30 14,15 * * 0"   # Sun 8:30am Mountain
+    - cron: "30 15,16 * * 4"   # Thu ~9:30am Mountain
+    - cron: "30 14,15 * * 0"   # Sun ~8:30am Mountain
   workflow_dispatch:
 
 jobs:
-  run:
+  # Runs on every trigger.
+  lines:
     runs-on: ubuntu-latest
     steps:
       - name: Ingest spread lines
@@ -20,5 +21,12 @@ jobs:
       - name: Grade finished games
         run: 'curl -sS --fail-with-body -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/grade"'
 
+  # Only the reminder schedules, never the hourly one. Previously all three
+  # steps shared a job, so the hourly run pinged the reminder endpoint 24
+  # times a day and buried the two that mattered in "skipped" noise.
+  remind:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule != '20 * * * *'
+    runs-on: ubuntu-latest
+    steps:
       - name: Send pick reminders
         run: 'curl -sS --fail-with-body -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/remind"'
