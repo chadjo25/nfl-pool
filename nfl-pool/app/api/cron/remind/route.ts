@@ -9,12 +9,19 @@ export const maxDuration = 60;
 /**
  * Nudge anyone with picks outstanding.
  *
- * Thursday 9:30am and Sunday 8:30am Mountain. GitHub's scheduler only speaks
- * UTC and doesn't know about daylight saving, so the workflow fires at both
- * candidate hours and this route decides whether it's actually the right
- * local time. Half the runs exit immediately, which costs nothing.
+ * Thursday ~9:30am and Sunday ~8:30am Mountain. Two things make the timing
+ * awkward: GitHub's scheduler only speaks UTC and ignores daylight saving, so
+ * each slot fires at both candidate hours and this route picks the right one;
+ * and GitHub routinely runs scheduled jobs 5-30 minutes late, which used to
+ * push a run past an exact-hour check and silently skip the whole thing.
+ *
+ * So the window is deliberately wide, and reminder_log makes sure a wide
+ * window still produces exactly one email per slot.
  */
-const SCHEDULE: Record<string, number> = { Thu: 9, Sun: 8 };
+const WINDOWS: Record<string, { hours: number[]; slot: "thu" | "sun" }> = {
+  Thu: { hours: [9, 10, 11], slot: "thu" },
+  Sun: { hours: [8, 9, 10], slot: "sun" },
+};
 
 function denverNow() {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -38,7 +45,9 @@ export async function GET(request: Request) {
   const dry = url.searchParams.get("dry") === "1";
 
   const { weekday, hour } = denverNow();
-  if (!force && SCHEDULE[weekday] !== hour) {
+  const window = WINDOWS[weekday];
+  const slot = window?.slot ?? "thu";
+  if (!force && !(window && window.hours.includes(hour))) {
     return NextResponse.json({ ok: true, skipped: `${weekday} ${hour}:00 MT` });
   }
 
@@ -73,6 +82,17 @@ export async function GET(request: Request) {
   );
   const guessed = new Set((tiebreaks.data ?? []).map((t) => t.profile_id));
   const games = totalGames ?? 0;
+
+  // Claim the slot before sending. The primary key means a second run inside
+  // the same window loses the race and exits, so a delayed or duplicated run
+  // can't double-mail anyone.
+  if (!force && !dry) {
+    const { error: claimed } = await db
+      .from("reminder_log").insert({ season, week, slot });
+    if (claimed) {
+      return NextResponse.json({ ok: true, week, slot, skipped: "already sent this slot" });
+    }
+  }
 
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? "https://nfl-pool-eight.vercel.app";
   const results: { name: string; missing: string[]; sent: boolean }[] = [];
@@ -120,5 +140,11 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, week, dry, reminded: results });
+  if (!force && !dry) {
+    await db.from("reminder_log")
+      .update({ count: results.filter((r) => r.sent).length })
+      .eq("season", season).eq("week", week).eq("slot", slot);
+  }
+
+  return NextResponse.json({ ok: true, week, slot, dry, reminded: results });
 }
