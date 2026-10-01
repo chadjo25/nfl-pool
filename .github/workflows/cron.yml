@@ -29,4 +29,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send pick reminders
-               run: 'curl -sS --fail-with-body -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/remind?dry=1&force=1"'
+        run: 'curl -sS --fail-with-body -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/remind?dry=1&force=1"'
