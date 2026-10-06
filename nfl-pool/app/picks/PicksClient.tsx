@@ -317,11 +317,30 @@ function LockPicker({
       ? `${g.home} ${fmtSpread(g.line?.home_spread ?? 0)}`
       : `${g.away} ${fmtSpread(g.line?.away_spread ?? 0)}`;
 
+  // Once your lock's game has started it can't be moved — otherwise you could
+  // watch it lose and shift the double somewhere else.
   if (current?.locked) {
     return (
       <div className="propform">
         <div className="lockcurrent">{sideOf(current)}<em>locked in</em></div>
-        <span className="hintline">This game has kicked off. Your lock is set for the week.</span>
+        <span className="hintline">That game has kicked off, so your lock is set for the week.</span>
+      </div>
+    );
+  }
+
+  // Nothing left to choose from and nothing chosen: say what the default did
+  // rather than showing an empty dropdown.
+  if (openGames.length === 0 && !current) {
+    return (
+      <div className="propform">
+        <div className="lockcurrent">
+          {lastGame ? `${lastGame.away} @ ${lastGame.home}` : "—"}
+          <em>defaulted — no lock was set</em>
+        </div>
+        <span className="hintline">
+          Every game has kicked off. With no lock chosen, it falls to the last game of
+          the week.
+        </span>
       </div>
     );
   }
