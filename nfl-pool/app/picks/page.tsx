@@ -24,8 +24,13 @@ export default async function PicksPage() {
 
   const games = await getOpenGames(season, week);
 
+  // Scoped to this week. Without the filter, `find` below picked whichever
+  // week's lock happened to come back first, so the page could show you a
+  // lock from three weeks ago and then fail to match it against this week's
+  // games. Scoring was never affected — it groups by week before looking.
   const { data: spreads } = await db
-    .from("spread_picks").select("game_id, side, is_lock").eq("profile_id", user!.id);
+    .from("spread_picks").select("game_id, side, is_lock")
+    .eq("profile_id", user!.id).eq("season", season).eq("week", week);
   const spreadPicks = Object.fromEntries(
     (spreads ?? []).map((s) => [s.game_id, s.side as "home" | "away"])
   );
