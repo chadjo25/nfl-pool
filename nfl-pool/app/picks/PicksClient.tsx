@@ -330,7 +330,7 @@ function LockPicker({
 
   // Nothing left to choose from and nothing chosen: say what the default did
   // rather than showing an empty dropdown.
-  if (openGames.length === 0 && !current) {
+  if (games.every((g) => g.locked) && !current) {
     return (
       <div className="propform">
         <div className="lockcurrent">
