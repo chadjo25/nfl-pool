@@ -18,6 +18,17 @@ import { createClient } from "@/lib/supabase/client";
  * The six-digit code has neither problem: it's typed into the same browser
  * session that requested it, and a scanner can't consume it by visiting a URL.
  */
+/**
+ * Deliberately stricter than "has an @".
+ *
+ * A typo'd address like steven@sumeyre passes a naive check, creates a real
+ * account, and then can never receive a sign-in link — leaving a ghost player
+ * in the standings who scores a loss on every game and inflates the headcount
+ * the prizes are calculated from. Requiring a real domain ending catches it at
+ * the only point where the person can still fix it themselves.
+ */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
+
 export default function LoginClient({ reason }: { reason: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -27,15 +38,20 @@ export default function LoginClient({ reason }: { reason: string | null }) {
   const [message, setMessage] = useState(reason ?? "");
 
   async function send() {
-    if (!email.includes("@")) {
+    const address = email.trim();
+    if (!EMAIL.test(address)) {
       setState("error");
-      setMessage("That doesn't look like an email address.");
+      setMessage(
+        address.includes("@")
+          ? "That address is missing a domain ending — check for a typo after the @."
+          : "That doesn't look like an email address."
+      );
       return;
     }
     setState("sending");
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
-      email,
+      email: address,
       options: {
         emailRedirectTo: `${location.origin}/auth/callback`,
         // Only applied when the account is created; ignored on later logins.
