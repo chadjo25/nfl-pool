@@ -60,7 +60,17 @@ export async function getStandings(
     });
   }
 
-  const players: PlayerSeason[] = (profiles.data ?? []).map((profile) => {
+  // Same rule as the weekly grid: an account with nothing submitted all
+  // season isn't a player, and shouldn't inflate the headcount that the
+  // weekly prize and season pot are derived from.
+  const active = new Set<string>([
+    ...spreads.map((s) => s.profile_id),
+    ...(props.data ?? []).map((p) => p.profile_id as string),
+  ]);
+
+  const players: PlayerSeason[] = (profiles.data ?? [])
+    .filter((profile) => active.has(profile.id))
+    .map((profile) => {
     const mySpreads = spreads
       .filter((s) => s.profile_id === profile.id)
       .map((s) => {
@@ -163,7 +173,7 @@ export type WeekRow = {
 export async function getWeeklySpreadResults(season: number): Promise<WeekRow[]> {
   const db = await createClient();
 
-  const [games, picks, tiebreaks, people] = await Promise.all([
+  const [games, picks, tiebreaks, people, propPlayers] = await Promise.all([
     fetchAll<{ id: string; week: number; status: string; kickoff: string; home: string; away: string; home_score: number | null; away_score: number | null }>(
       (from, to) => db.from("games")
         .select("id, week, status, kickoff, home, away, home_score, away_score")
@@ -176,6 +186,18 @@ export async function getWeeklySpreadResults(season: number): Promise<WeekRow[]>
     ),
     db.from("tiebreak_guesses").select("profile_id, week, points").eq("season", season),
     db.from("profiles").select("id, created_at"),
+    db.from("prop_picks").select("profile_id").eq("season", season),
+  ]);
+
+  // Accounts that have never submitted anything all season are left out
+  // entirely. A typo'd email creates a real account that can't receive a
+  // sign-in link, and without this it drags a phantom 0-16 through every
+  // week and skews the headcount the prizes are calculated from. Someone who
+  // played and then stopped still gets charged for the weeks they skipped —
+  // this only removes people who were never here.
+  const active = new Set<string>([
+    ...picks.map((p) => p.profile_id),
+    ...(propPlayers.data ?? []).map((p) => p.profile_id as string),
   ]);
 
   // Final games per week, so a missing pick can be scored as a loss.
@@ -250,6 +272,7 @@ export async function getWeeklySpreadResults(season: number): Promise<WeekRow[]>
     const eligible = new Set<string>(pickedBy.keys());
     if (finals.length > 0) {
       for (const [profileId, joined] of joinedAt) {
+        if (!active.has(profileId)) continue;   // never played at all
         // Don't charge someone for games that finished before they signed up.
         if (finals.some((g) => joined < g.kickoff)) eligible.add(profileId);
       }
