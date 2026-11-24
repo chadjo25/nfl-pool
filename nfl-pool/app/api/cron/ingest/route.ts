@@ -37,6 +37,30 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, games: 0, note: "no lines posted" });
   }
 
+  // The provider re-issues an event id when a game changes broadcast slot —
+  // a flex from Sunday afternoon to Sunday night arrives as a brand new id for
+  // the same matchup. Upserting on id alone created a second games row, so the
+  // matchup appeared twice on the picks page and picks were split across both.
+  //
+  // Reconcile on the matchup instead: if this season/week/home/away already
+  // exists under a different id, keep writing to the row people have already
+  // picked and just update its kickoff. The provider's new id is discarded.
+  const { data: existing } = await db
+    .from("games").select("id, week, home, away").eq("season", season);
+
+  const byMatchup = new Map<string, string>(
+    (existing ?? []).map((g) => [`${g.week}|${g.away}@${g.home}`, g.id as string])
+  );
+
+  let remapped = 0;
+  for (const g of games) {
+    const known = byMatchup.get(`${weekFromKickoff(g.kickoff)}|${g.away}@${g.home}`);
+    if (known && known !== g.id) {
+      g.id = known;
+      remapped++;
+    }
+  }
+
   const { error: gamesError } = await db.from("games").upsert(
     games.map((g) => ({
       id: g.id,
@@ -83,5 +107,5 @@ export async function GET(request: Request) {
     { onConflict: "season,week" }
   );
 
-  return NextResponse.json({ ok: true, games: games.length, capturedAt });
+  return NextResponse.json({ ok: true, games: games.length, remapped, capturedAt });
 }
