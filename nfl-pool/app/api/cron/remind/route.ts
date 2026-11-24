@@ -7,32 +7,37 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Nudge anyone with picks outstanding.
+ * Nudge anyone with picks still outstanding, on the morning of a game day.
  *
- * Thursday ~9:30am and Sunday ~8:30am Mountain. Two things make the timing
- * awkward: GitHub's scheduler only speaks UTC and ignores daylight saving, so
- * each slot fires at both candidate hours and this route picks the right one;
- * and GitHub routinely runs scheduled jobs 5-30 minutes late, which used to
- * push a run past an exact-hour check and silently skip the whole thing.
+ * This used to fire on Thursday and Sunday only, which is wrong on any week
+ * with an unusual slate — Thanksgiving week has games Wednesday, Thursday,
+ * Friday, Sunday and Monday. Now it looks at the actual schedule: if games
+ * kick off later today and someone still has picks open, they hear about it.
  *
- * So the window is deliberately wide, and reminder_log makes sure a wide
- * window still produces exactly one email per slot.
+ * The window is a few hours wide because GitHub and most free schedulers run
+ * jobs late, and reminder_log keys on the date so a wide window still produces
+ * at most one email per person per day.
  */
-const WINDOWS: Record<string, { hours: number[]; slot: "thu" | "sun" }> = {
-  Thu: { hours: [9, 10, 11], slot: "thu" },
-  Sun: { hours: [8, 9, 10], slot: "sun" },
-};
+const MORNING = [7, 8, 9, 10, 11];
 
 function denverNow() {
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Denver",
-    weekday: "short",
-    hour: "numeric",
-    hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", hour12: false,
   }).formatToParts(new Date());
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  return { weekday: get("weekday"), hour: Number(get("hour")) % 24 };
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    hour: Number(get("hour")) % 24,
+  };
 }
+
+/** Calendar date in Denver for any timestamp. */
+const denverDate = (iso: string) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Denver",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date(iso));
 
 export async function GET(request: Request) {
   const auth = request.headers.get("authorization");
@@ -44,11 +49,10 @@ export async function GET(request: Request) {
   const force = url.searchParams.get("force") === "1";
   const dry = url.searchParams.get("dry") === "1";
 
-  const { weekday, hour } = denverNow();
-  const window = WINDOWS[weekday];
-  const slot = window?.slot ?? "thu";
-  if (!force && !(window && window.hours.includes(hour))) {
-    return NextResponse.json({ ok: true, skipped: `${weekday} ${hour}:00 MT` });
+  const { date: today, hour } = denverNow();
+  const slot = today;
+  if (!force && !MORNING.includes(hour)) {
+    return NextResponse.json({ ok: true, skipped: `${hour}:00 MT — outside the morning window` });
   }
 
   const key = process.env.BREVO_API_KEY;
@@ -68,11 +72,30 @@ export async function GET(request: Request) {
   if (!open) return NextResponse.json({ ok: true, note: "no open week" });
   const week = open.week;
 
-  const [{ count: totalGames }, profiles, spreads, tiebreaks, users] = await Promise.all([
-    db.from("games").select("id", { count: "exact", head: true })
-      .eq("season", season).eq("week", week),
+  const { data: weekGames } = await db
+    .from("games").select("id, away, home, kickoff")
+    .eq("season", season).eq("week", week).order("kickoff");
+
+  const now = Date.now();
+  const all = weekGames ?? [];
+  const stillOpen = all.filter((g) => new Date(g.kickoff).getTime() > now);
+  const todayGames = stillOpen.filter((g) => denverDate(g.kickoff) === today);
+
+  // Only nudge on days that actually have football left to play.
+  if (!force && todayGames.length === 0) {
+    return NextResponse.json({ ok: true, week, skipped: "no games left to kick off today" });
+  }
+  if (stillOpen.length === 0) {
+    return NextResponse.json({ ok: true, week, skipped: "every game has started" });
+  }
+
+  const lastGame = all[all.length - 1];
+  const tiebreakOpen = lastGame ? new Date(lastGame.kickoff).getTime() > now : false;
+  const openIds = new Set(stillOpen.map((g) => g.id));
+
+  const [profiles, spreads, tiebreaks, users] = await Promise.all([
     db.from("profiles").select("id, display_name"),
-    db.from("spread_picks").select("profile_id, is_lock").eq("season", season).eq("week", week),
+    db.from("spread_picks").select("profile_id, game_id, is_lock").eq("season", season).eq("week", week),
     db.from("tiebreak_guesses").select("profile_id").eq("season", season).eq("week", week),
     db.auth.admin.listUsers(),
   ]);
@@ -81,7 +104,8 @@ export async function GET(request: Request) {
     (users.data?.users ?? []).map((u: { id: string; email?: string }) => [u.id, u.email ?? ""])
   );
   const guessed = new Set((tiebreaks.data ?? []).map((t) => t.profile_id));
-  const games = totalGames ?? 0;
+
+  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "https://nfl-pool-eight.vercel.app";
 
   // Claim the slot before sending. The primary key means a second run inside
   // the same window loses the race and exits, so a delayed or duplicated run
@@ -94,15 +118,22 @@ export async function GET(request: Request) {
     }
   }
 
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "https://nfl-pool-eight.vercel.app";
   const results: { name: string; missing: string[]; sent: boolean }[] = [];
 
   for (const p of profiles.data ?? []) {
     const mine = (spreads.data ?? []).filter((s) => s.profile_id === p.id);
+    const picked = new Set(mine.map((s) => s.game_id));
+
+    // Only count games they can still act on. Nagging about a game that
+    // kicked off two days ago is noise — that one is already scored.
+    const unpicked = stillOpen.filter((g) => !picked.has(g.id));
+
     const missing: string[] = [];
-    if (mine.length < games) missing.push(`${games - mine.length} of ${games} spreads`);
+    if (unpicked.length > 0) {
+      missing.push(`${unpicked.length} spread${unpicked.length === 1 ? "" : "s"}`);
+    }
     if (!mine.some((s) => s.is_lock)) missing.push("your lock");
-    if (!guessed.has(p.id)) missing.push("the tiebreaker");
+    if (tiebreakOpen && !guessed.has(p.id)) missing.push("the tiebreaker");
 
     // Nobody needs an email telling them they're already done.
     if (missing.length === 0) continue;
@@ -110,9 +141,14 @@ export async function GET(request: Request) {
     const email = emailOf.get(p.id);
     if (!email) continue;
 
+    const kickingOff = todayGames
+      .map((g) => `${g.away} @ ${g.home}`)
+      .slice(0, 4)
+      .join(", ");
+
     const body = `
       <div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#16191A">
-        <p>${p.display_name} — Week ${week} picks are still open.</p>
+        <p>${p.display_name} — football today: ${kickingOff}${todayGames.length > 4 ? " and more" : ""}.</p>
         <p><strong>You're missing ${missing.join(", ")}.</strong></p>
         <p>Each game locks at its own kickoff, so anything you haven't picked
            by then scores as a loss.</p>
@@ -129,7 +165,7 @@ export async function GET(request: Request) {
         body: JSON.stringify({
           sender: { name: process.env.BREVO_SENDER_NAME ?? "Dick Picks 2026", email: from },
           to: [{ email, name: p.display_name }],
-          subject: `Week ${week} picks — ${missing[0]} outstanding`,
+          subject: `${todayGames.length} game${todayGames.length === 1 ? "" : "s"} today — ${missing[0]} outstanding`,
           htmlContent: body,
         }),
       });
