@@ -40,10 +40,10 @@ export type Row = {
  * wins, WAE, units, points — is derived from the price and this one click.
  */
 export default function GradeClient({
-  rows, week, season, weeks, submissions, openWeek,
+  rows, week, season, weeks, submissions, openWeek, ghosts,
 }: {
   rows: Row[]; week: number; season: number; weeks: WeekTab[];
-  submissions: Submission[]; openWeek: number;
+  submissions: Submission[]; openWeek: number; ghosts: string[];
 }) {
   const [state, setState] = useState(rows);
   const [error, setError] = useState("");
@@ -129,6 +129,15 @@ export default function GradeClient({
         usually goes wrong. TD and prop are optional, so they&apos;re greyed rather than flagged.
         No tiebreaker means losing any tie automatically.
       </p>
+
+      {ghosts.length > 0 && (
+        <p className="note" style={{ borderLeft: "3px solid var(--amber)", paddingLeft: 13 }}>
+          <b>{ghosts.length} account{ghosts.length === 1 ? "" : "s"} with nothing submitted all
+          season:</b> {ghosts.join(", ")}. These are kept out of the table and the standings so
+          they don&apos;t show as someone who forgot to pick. Usually a mistyped email — the person
+          never received a sign-in link and made a second account. Worth deleting.
+        </p>
+      )}
 
       <h2 className="sec">Grade props <em className="opt">Week {week}</em></h2>
       <div className="gradelist">
