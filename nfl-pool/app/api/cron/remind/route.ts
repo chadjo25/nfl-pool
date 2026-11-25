@@ -110,11 +110,25 @@ export async function GET(request: Request) {
   // Claim the slot before sending. The primary key means a second run inside
   // the same window loses the race and exits, so a delayed or duplicated run
   // can't double-mail anyone.
+  //
+  // Only a duplicate-key error means "already sent". Anything else is a real
+  // failure and has to be loud: this previously returned the same cheerful
+  // "already sent" for both, so a broken claim looked exactly like a normal
+  // no-op and two weeks of reminders went missing without a single error
+  // anywhere. A non-200 here fails the cron job, which is the point.
   if (!force && !dry) {
     const { error: claimed } = await db
       .from("reminder_log").insert({ season, week, slot });
+
+    if (claimed?.code === "23505") {
+      return NextResponse.json({ ok: true, week, slot, skipped: "already sent today" });
+    }
     if (claimed) {
-      return NextResponse.json({ ok: true, week, slot, skipped: "already sent this slot" });
+      console.error("[remind] could not claim slot", claimed);
+      return NextResponse.json(
+        { ok: false, week, slot, error: `Could not claim the slot: ${claimed.message}` },
+        { status: 500 }
+      );
     }
   }
 
@@ -176,11 +190,25 @@ export async function GET(request: Request) {
     }
   }
 
+  const sent = results.filter((r) => r.sent).length;
+  const failed = results.filter((r) => !r.sent).length;
+
   if (!force && !dry) {
     await db.from("reminder_log")
-      .update({ count: results.filter((r) => r.sent).length })
+      .update({ count: sent })
       .eq("season", season).eq("week", week).eq("slot", slot);
   }
 
-  return NextResponse.json({ ok: true, week, slot, dry, reminded: results });
+  // Everyone bounced means the mail provider is down or the key is wrong.
+  // The slot is already claimed at this point, so without a loud failure here
+  // the day would be silently written off.
+  if (!dry && failed > 0 && sent === 0) {
+    console.error(`[remind] all ${failed} sends failed`);
+    return NextResponse.json(
+      { ok: false, week, slot, error: `All ${failed} reminder emails failed to send`, reminded: results },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ ok: true, week, slot, dry, sent, failed, reminded: results });
 }
