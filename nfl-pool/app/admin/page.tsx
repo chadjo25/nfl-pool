@@ -23,10 +23,10 @@ async function livingWeek(season: number) {
  * suspected of peeking, and the commissioner plays too. Knowing that someone
  * has 11 of 16 spreads in and no lock set is all the oversight the job needs.
  */
-async function getSubmissions(season: number, week: number): Promise<Submission[]> {
+async function getSubmissions(season: number, week: number): Promise<{ rows: Submission[]; ghosts: string[] }> {
   const db = await createClient();
 
-  const [profiles, games, spreads, props, tiebreaks] = await Promise.all([
+  const [profiles, games, spreads, props, tiebreaks, seasonSpreads, seasonProps] = await Promise.all([
     db.from("profiles").select("id, display_name"),
     db.from("games").select("id", { count: "exact", head: true })
       .eq("season", season).eq("week", week),
@@ -36,12 +36,31 @@ async function getSubmissions(season: number, week: number): Promise<Submission[
       .eq("season", season).eq("week", week),
     db.from("tiebreak_guesses").select("profile_id")
       .eq("season", season).eq("week", week),
+    db.from("spread_picks").select("profile_id").eq("season", season),
+    db.from("prop_picks").select("profile_id").eq("season", season),
+  ]);
+
+  // Same rule the standings use: an account that has submitted nothing all
+  // season isn't a player. A typo'd or abandoned signup creates a real profile
+  // that would otherwise sit here at 0/16 every week looking like someone who
+  // forgot to pick. The standings already filtered these out; this panel
+  // queried profiles directly and didn't.
+  const active = new Set<string>([
+    ...(seasonSpreads.data ?? []).map((r) => r.profile_id as string),
+    ...(seasonProps.data ?? []).map((r) => r.profile_id as string),
   ]);
 
   const totalGames = games.count ?? 0;
   const guessed = new Set((tiebreaks.data ?? []).map((t) => t.profile_id));
 
-  return (profiles.data ?? [])
+  // Hidden from the table, but named underneath it — an account nobody can
+  // sign into should get cleaned up, not quietly disappear.
+  const ghosts = (profiles.data ?? [])
+    .filter((p) => !active.has(p.id))
+    .map((p) => p.display_name as string);
+
+  const rows = (profiles.data ?? [])
+    .filter((p) => active.has(p.id))
     .map((p) => {
       const mine = (spreads.data ?? []).filter((s) => s.profile_id === p.id);
       const myProps = (props.data ?? []).filter((x) => x.profile_id === p.id);
@@ -57,6 +76,8 @@ async function getSubmissions(season: number, week: number): Promise<Submission[
       };
     })
     .sort((a, b) => a.spreads - b.spreads || a.displayName.localeCompare(b.displayName));
+
+  return { rows, ghosts };
 }
 
 export default async function Admin({
@@ -94,7 +115,7 @@ export default async function Admin({
       : weeks.find((w) => w.ungraded > 0)?.week ?? weeks.at(-1)?.week ?? 1;
 
   const openWeek = await livingWeek(season);
-  const submissions = await getSubmissions(season, openWeek);
+  const { rows: submissions, ghosts } = await getSubmissions(season, openWeek);
 
   // Names are fetched separately rather than as an embedded join: prop_picks
   // has two foreign keys into profiles (profile_id and graded_by), so asking
@@ -139,7 +160,7 @@ export default async function Admin({
   return (
     <GradeClient
       rows={rows} week={week} season={season} weeks={weeks}
-      submissions={submissions} openWeek={openWeek}
+      submissions={submissions} openWeek={openWeek} ghosts={ghosts}
     />
   );
 }
