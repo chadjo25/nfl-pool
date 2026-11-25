@@ -29,6 +29,34 @@ import { createClient } from "@/lib/supabase/client";
  */
 const EMAIL = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
 
+/**
+ * Near-misses of common providers.
+ *
+ * The format check above accepts nickmilne34@yahoo.con quite happily — "con"
+ * is two-plus letters after a dot, so it's a structurally valid address that
+ * simply doesn't exist. A real player typed exactly that, got no sign-in link,
+ * and left a ghost account sitting at 0/16 in the standings.
+ *
+ * This can't catch everything (steve@ instead of steven@ is a valid address
+ * belonging to nobody), but it catches the common slips for free.
+ */
+const DOMAIN_TYPOS: Record<string, string> = {
+  "gmail.con": "gmail.com", "gmail.cmo": "gmail.com", "gmail.co": "gmail.com",
+  "gmial.com": "gmail.com", "gmai.com": "gmail.com", "gamil.com": "gmail.com",
+  "yahoo.con": "yahoo.com", "yahoo.cmo": "yahoo.com", "yaho.com": "yahoo.com",
+  "yahooo.com": "yahoo.com", "hotmial.com": "hotmail.com", "hotmai.com": "hotmail.com",
+  "hotmail.con": "hotmail.com", "outlook.con": "outlook.com", "outlok.com": "outlook.com",
+  "icloud.con": "icloud.com", "iclould.com": "icloud.com", "aol.con": "aol.com",
+};
+
+function suggestFix(address: string): string | null {
+  const at = address.lastIndexOf("@");
+  if (at < 0) return null;
+  const domain = address.slice(at + 1).toLowerCase();
+  const better = DOMAIN_TYPOS[domain];
+  return better ? `${address.slice(0, at)}@${better}` : null;
+}
+
 export default function LoginClient({ reason }: { reason: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -36,9 +64,20 @@ export default function LoginClient({ reason }: { reason: string | null }) {
   const [code, setCode] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "verifying" | "error">("idle");
   const [message, setMessage] = useState(reason ?? "");
+  const [suggestion, setSuggestion] = useState<string | null>(null);
 
   async function send() {
     const address = email.trim();
+
+    // Offer the correction once; sending again with the same text accepts it
+    // as typed, in case someone really does own a .con address.
+    const better = suggestFix(address);
+    if (better && better !== suggestion) {
+      setSuggestion(better);
+      setState("idle");
+      return;
+    }
+
     if (!EMAIL.test(address)) {
       setState("error");
       setMessage(
@@ -116,6 +155,16 @@ export default function LoginClient({ reason }: { reason: string | null }) {
             onChange={(e) => { setEmail(e.target.value); setState("idle"); }}
             onKeyDown={(e) => e.key === "Enter" && send()}
           />
+          {suggestion && (
+            <p className="suggest">
+              Did you mean{" "}
+              <button className="link" onClick={() => {
+                setEmail(suggestion); setSuggestion(null); setState("idle");
+              }}>{suggestion}</button>?
+              <br />
+              <span className="faint">If not, tap send again to use what you typed.</span>
+            </p>
+          )}
           <button className="btn" onClick={send} disabled={state === "sending"}>
             {state === "sending" ? "Sending…" : "Email me a link"}
           </button>
