@@ -212,3 +212,7 @@ dl.terms .calc{
   font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink);
   background:var(--band);padding:6px 9px;border-radius:var(--r);margin:7px 0
 }
+
+/* email typo suggestion on the login page */
+.suggest{font-size:13px;color:var(--ink2);line-height:1.5;margin-bottom:14px}
+.suggest .faint{font-size:11.5px;color:var(--ink3)}
